@@ -1,0 +1,16 @@
+{
+  "name": "capstone-workflow-web",
+  "private": true,
+  "version": "2.0.0",
+  "description": "React 18 single-page app for the serverless approval workflows",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  }
+}

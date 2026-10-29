@@ -43,7 +43,8 @@ export const Approvals = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filter requests that are currently in 'Pending' status
-  const pendingList = requests.filter((r) => r.status === 'Pending');
+  // canAct is set by the live API adapter: only show requests waiting on one of the user's roles
+  const pendingList = requests.filter((r) => r.status === 'Pending' && r.canAct !== false);
 
   const handleOpenAction = (req, action) => {
     setSelectedReq(req);
@@ -62,7 +63,7 @@ export const Approvals = () => {
       });
 
       dispatch(updateRequest(updated));
-      if (updated.status !== 'Pending') {
+      if (updated.status !== 'Pending' || updated.canAct === false) {
         dispatch(removePendingApproval(selectedReq.id));
       }
 
@@ -79,6 +80,7 @@ export const Approvals = () => {
       setNotes('');
     } catch (err) {
       console.error('Approval failed:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setIsSubmitting(false);
     }
@@ -110,6 +112,7 @@ export const Approvals = () => {
       setNotes('');
     } catch (err) {
       console.error('Rejection failed:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setIsSubmitting(false);
     }

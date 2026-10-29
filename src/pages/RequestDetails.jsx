@@ -99,6 +99,7 @@ export const RequestDetails = () => {
       setComments('');
     } catch (err) {
       console.error('Approval failed:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setActionLoading(false);
     }
@@ -128,6 +129,7 @@ export const RequestDetails = () => {
       setComments('');
     } catch (err) {
       console.error('Rejection failed:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setActionLoading(false);
     }
@@ -173,7 +175,7 @@ export const RequestDetails = () => {
           <span>Back to All Requisitions</span>
         </Link>
 
-        {request.status === 'Pending' && (
+        {request.status === 'Pending' && request.canAct !== false && (
           <div className="flex items-center gap-2">
             <Button
               variant="danger"

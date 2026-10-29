@@ -1,0 +1,313 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless workflow platform - Cognito, API Gateway (JWT), Lambda, DynamoDB, S3, EventBridge, SNS
+
+Parameters:
+  NotifyEmail:
+    Type: String
+    Default: ""
+    Description: Optional email that receives completed / rejected / escalated notifications (human requests only)
+  ReplicaTableName:
+    Type: String
+    Default: ""
+    Description: Optional DR stack table; every request change is copied there (warm standby)
+  EscalateAfterMinutes:
+    Type: Number
+    Default: 120
+    MinValue: 0
+    Description: A request waiting this long at one approval stage is escalated (spec target is under 2 hours; 0 = off)
+
+Conditions:
+  HasEmail: !Not [!Equals [!Ref NotifyEmail, ""]]
+  HasReplica: !Not [!Equals [!Ref ReplicaTableName, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 10
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref WorkflowTable
+        CLOUD_NAME: aws
+        CLOUD_REGION: !Ref AWS::Region
+        AUTH_MODE: cognito
+        COGNITO_REGION: !Ref AWS::Region
+        COGNITO_CLIENT_ID: !Ref UserPoolClient
+
+Resources:
+  # ---------------------------------------------------------------- data tier
+  WorkflowTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: N }
+        - { AttributeName: gsi2pk, AttributeType: S }
+        - { AttributeName: gsi2sk, AttributeType: N }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi2
+          KeySchema:
+            - { AttributeName: gsi2pk, KeyType: HASH }
+            - { AttributeName: gsi2sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - { AllowedMethods: [PUT], AllowedOrigins: ["*"], AllowedHeaders: ["*"], MaxAge: 3000 }
+
+  # ---------------------------------------------------------------- identity (module 1)
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-users
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireNumbers: true
+          RequireLowercase: false
+          RequireUppercase: false
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: workflow-console
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+
+  # One group per role in the approval chains. The API only lets a user act as a role they belong to.
+  ManagerGroup:     { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: Manager } }
+  ProcurementGroup: { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: Procurement } }
+  FinanceGroup:     { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: Finance } }
+  HRGroup:          { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: HR } }
+  ITGroup:          { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: IT } }
+  AdminGroup:       { Type: AWS::Cognito::UserPoolGroup, Properties: { UserPoolId: !Ref UserPool, GroupName: Admin } }
+
+  # ---------------------------------------------------------------- API + compute
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingRateLimit: 50       # steady req/s (spec: rate limiting at the gateway)
+        ThrottlingBurstLimit: 100
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:                 # API Gateway verifies the token signature before Lambda runs
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: api.lambda_handler
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DocumentBucket
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref WorkflowTable }
+        - S3WritePolicy: { BucketName: !Ref DocumentBucket }
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+        Health:                       # open, so the Pi can health-check and failback without a token
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /health
+            Method: GET
+            Auth: { Authorizer: NONE }
+        Preflight:                    # browsers send CORS preflights without a token
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: OPTIONS
+            Auth: { Authorizer: NONE }
+
+  # ---------------------------------------------------------------- event mesh + audit
+  WorkflowBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub ${AWS::StackName}-bus
+
+  StreamDLQ:
+    Type: AWS::SQS::Queue
+    Properties: { MessageRetentionPeriod: 1209600 }
+
+  AuditStreamFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: audit_stream.lambda_handler
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref WorkflowBus
+          REPLICA_TABLE: !Ref ReplicaTableName
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref WorkflowTable }
+        - EventBridgePutEventsPolicy: { EventBusName: !Ref WorkflowBus }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt StreamDLQ.QueueName }
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !Sub
+                - arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${T}
+                - T: !If [HasReplica, !Ref ReplicaTableName, none]
+      Events:
+        Stream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt WorkflowTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 25
+            MaximumRetryAttempts: 3
+            BisectBatchOnFunctionError: true
+            DestinationConfig:
+              OnFailure: { Destination: !GetAtt StreamDLQ.Arn }
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"dynamodb": {"Keys": {"sk": {"S": ["META"]}}}}'
+
+  EscalationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: escalate.lambda_handler
+      Timeout: 60
+      Environment:
+        Variables:
+          ESCALATE_AFTER_MIN: !Ref EscalateAfterMinutes
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref WorkflowTable }
+      Events:
+        Every15Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+
+  NotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref NotificationTopic]
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref NotificationTopic
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties:
+      TopicArn: !Ref NotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotifyEmail
+
+  DecisionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref WorkflowBus
+      EventPattern:
+        source: [capstone.workflow]
+        detail-type: [RequestCompleted, RequestRejected]
+        detail:
+          source: [{ "anything-but": "edge-pi" }]     # the Pi's synthetic load would flood the inbox
+      Targets:
+        - Id: notify
+          Arn: !Ref NotificationTopic
+          InputTransformer:
+            InputPathsMap:
+              type: $.detail.type
+              title: $.detail.title
+              status: $.detail.status
+              who: $.detail.requester
+            InputTemplate: '"<type> request \"<title>\" from <who> is now <status>."'
+
+  EscalationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref WorkflowBus
+      EventPattern:
+        source: [capstone.workflow]
+        detail-type: [RequestEscalated]
+        detail:
+          source: [{ "anything-but": "edge-pi" }]
+      Targets:
+        - Id: notify
+          Arn: !Ref NotificationTopic
+          InputTransformer:
+            InputPathsMap:
+              type: $.detail.type
+              title: $.detail.title
+              role: $.detail.pendingRole
+              who: $.detail.requester
+            InputTemplate: '"ESCALATION: <type> request \"<title>\" from <who> is overdue, still waiting on <role>. An Admin can approve it."'
+
+  ArchiveAllEvents:
+    Type: AWS::Events::Archive
+    Properties:
+      SourceArn: !GetAtt WorkflowBus.Arn
+      RetentionDays: 30
+
+Outputs:
+  ApiUrl:
+    Description: Primary endpoint - put this in the Pi's PRIMARY_URL and the dashboard
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  UserPoolId:
+    Description: Used by create_users.sh
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ApiFunctionName:
+    Description: Used by the chaos drill (set its concurrency to 0 to simulate an outage)
+    Value: !Ref ApiFunction
+  TableName:
+    Value: !Ref WorkflowTable
+  BucketName:
+    Value: !Ref DocumentBucket

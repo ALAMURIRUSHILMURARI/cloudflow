@@ -122,6 +122,7 @@ export const LeaveRequest = () => {
       navigate(`/requests/${newRequest.id}`);
     } catch (err) {
       console.error('Failed to submit leave request:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }

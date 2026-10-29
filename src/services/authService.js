@@ -13,6 +13,7 @@
  */
 
 import { MOCK_USERS } from '../data/mockData';
+import * as cloud from './cloudApi';
 
 const AUTH_STORAGE_KEY = 'cloudflow_auth_session';
 
@@ -24,6 +25,14 @@ class AuthService {
    * @returns {Promise<{ user: object, token: string }>}
    */
   async login(email, password) {
+    if (cloud.IS_LIVE) {
+      const { claims } = await cloud.login(email, password);
+      const session = { user: cloud.userFromClaims(claims), token: 'cognito', live: true,
+                        expiresAt: Date.now() + 8 * 60 * 60 * 1000 };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+      return session;
+    }
+
     // Simulated network delay (300ms)
     await new Promise((resolve) => setTimeout(resolve, 300));
 
@@ -51,6 +60,7 @@ class AuthService {
    */
   async logout() {
     await new Promise((resolve) => setTimeout(resolve, 150));
+    if (cloud.IS_LIVE) cloud.logout();
     localStorage.removeItem(AUTH_STORAGE_KEY);
     return true;
   }
@@ -63,6 +73,11 @@ class AuthService {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY);
       if (!stored) return null;
       const session = JSON.parse(stored);
+      // A live session needs its Cognito tokens (kept per browser tab); a mock one must not leak into live mode.
+      if (cloud.IS_LIVE !== !!session.live || (cloud.IS_LIVE && !cloud.currentClaims())) {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        return null;
+      }
       if (session.expiresAt && Date.now() > session.expiresAt) {
         localStorage.removeItem(AUTH_STORAGE_KEY);
         return null;

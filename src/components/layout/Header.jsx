@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { logout } from '../../store/slices/authSlice';
 import authService from '../../services/authService';
+import { IS_LIVE } from '../../services/cloudApi';
 
 export const Header = ({ onMenuClick }) => {
   const navigate = useNavigate();
@@ -85,7 +86,7 @@ export const Header = ({ onMenuClick }) => {
         <div className="hidden md:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
           <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="font-medium text-[11px] text-slate-700">Environment:</span>
-          <span className="font-semibold text-[11px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">Mock Testbed</span>
+          <span className="font-semibold text-[11px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">{IS_LIVE ? 'Live AWS' : 'Mock Testbed'}</span>
         </div>
 
         {/* Quick New Request Button */}

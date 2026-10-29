@@ -17,6 +17,7 @@ import Approvals from '../pages/Approvals';
 import Notifications from '../pages/Notifications';
 import Profile from '../pages/Profile';
 import Settings from '../pages/Settings';
+import EdgeTelemetry from '../pages/EdgeTelemetry';
 
 /**
  * Route protection wrapper.
@@ -86,6 +87,7 @@ export const AppRoutes = () => {
         <Route path="notifications" element={<Notifications />} />
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="telemetry" element={<EdgeTelemetry />} />
       </Route>
 
       {/* Fallback unknown routes */}
