@@ -14,6 +14,16 @@
 
 Put the chart `latency.svg` next to the table. It shows p95 per minute with the failover and failback markers, and the red 2000 ms SLO line.
 
+## Second run: Cognito stacks (29 Oct, 18:10 UTC)
+Re-measured on the final stacks (Cognito sign-in, DR replication), at about 550 requests/min from the Pi with a chaos drill:
+
+| Objective | Target | Measured | Met |
+|---|---|---|---|
+| API latency (p95) | < 2000 ms | 469.6 ms overall (primary 466.9 ms, DR 477.4 ms) | ✅ |
+| Success rate | 99.9 % | 99.83 % over 3,585 calls including the drill (6 failed, during outage detection); 0 errors in the steady minutes before it | ✅ steady state |
+| Failover time | < 15 s | 3.2 s | ✅ |
+| DR capacity | serves full load | 945 calls on DR, 0 errors | ✅ |
+
 ## Supporting numbers (backup slide or speaker notes)
 - 2,763 real API calls from the Pi across all four workflows (Purchase, Leave, Expense, IT Access).
 - Primary: 2,031 calls, p50 ≈ 420 ms.

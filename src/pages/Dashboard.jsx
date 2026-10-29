@@ -22,6 +22,7 @@ import {
 import StatCard from '../components/dashboard/StatCard';
 import RecentRequests from '../components/dashboard/RecentRequests';
 import ActivityFeed from '../components/dashboard/ActivityFeed';
+import { IS_LIVE } from '../services/cloudApi';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
@@ -127,25 +128,33 @@ export const Dashboard = () => {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-              <AlertTriangle className="h-5 w-5" />
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${IS_LIVE ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+              {IS_LIVE ? <Cloud className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900">System Integration Status</h3>
-                <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                  Demo / Integration Pending
-                </span>
+                {IS_LIVE ? (
+                  <span className="rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                    Live on AWS
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                    Demo / Integration Pending
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Current prototype uses client-side mock orchestration for academic demonstration & UI validation.
+                {IS_LIVE
+                  ? 'Connected to the AWS serverless backend (primary + DR stack) with automatic client-side failover.'
+                  : 'Current prototype uses client-side mock orchestration for academic demonstration & UI validation.'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-mono text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-            <span>AWS Backend Target: us-east-1</span>
+            <span className={`h-2 w-2 rounded-full ${IS_LIVE ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+            <span>{IS_LIVE ? 'AWS Region: ap-southeast-2' : 'AWS Backend Target: us-east-1'}</span>
           </div>
         </div>
 
@@ -168,8 +177,8 @@ export const Dashboard = () => {
               <span>Auth Service</span>
             </div>
             <p className="text-[11px] text-slate-500">Amazon Cognito User Pool</p>
-            <span className="mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-              ◌ Mock Layer Ready
+            <span className={IS_LIVE ? "mt-2 inline-block text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" : "mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"}>
+              {IS_LIVE ? '● Live: JWT sign-in' : '◌ Mock Layer Ready'}
             </span>
           </div>
 
@@ -178,9 +187,9 @@ export const Dashboard = () => {
               <Cpu className="h-4 w-4 text-indigo-600" />
               <span>Orchestration</span>
             </div>
-            <p className="text-[11px] text-slate-500">AWS Step Functions + Lambda</p>
-            <span className="mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-              ◌ Architecture Mapped
+            <p className="text-[11px] text-slate-500">{IS_LIVE ? 'AWS Lambda workflow engine' : 'AWS Step Functions + Lambda'}</p>
+            <span className={IS_LIVE ? "mt-2 inline-block text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" : "mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"}>
+              {IS_LIVE ? '● Live: Lambda + EventBridge' : '◌ Architecture Mapped'}
             </span>
           </div>
 
@@ -190,8 +199,8 @@ export const Dashboard = () => {
               <span>Storage & S3</span>
             </div>
             <p className="text-[11px] text-slate-500">DynamoDB & S3 Presigned</p>
-            <span className="mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-              ◌ Schemas Defined
+            <span className={IS_LIVE ? "mt-2 inline-block text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" : "mt-2 inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"}>
+              {IS_LIVE ? '● Live: Streams to DR' : '◌ Schemas Defined'}
             </span>
           </div>
         </div>
