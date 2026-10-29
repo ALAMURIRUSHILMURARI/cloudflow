@@ -23,7 +23,7 @@
 | Live API client and failover | `src/services/cloudApi.js`, `src/services/liveService.js` |
 | Demo runbook, cost analysis, results | `docs/` |
 
-**Deploy** (from Git Bash, with the AWS CLI and SAM CLI signed in):
+**Deploy** (from Git Bash, with the AWS CLI signed in; no SAM CLI needed):
 
 ```bash
 cd backend/cloud/aws
