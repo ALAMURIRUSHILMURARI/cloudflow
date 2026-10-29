@@ -141,7 +141,6 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DocumentBucket
-          API_TOKEN: !Ref ApiToken
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref WorkflowTable }
         - S3WritePolicy: { BucketName: !Ref DocumentBucket }
