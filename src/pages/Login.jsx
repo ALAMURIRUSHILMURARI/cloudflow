@@ -22,6 +22,7 @@ import {
   clearAuthError 
 } from '../store/slices/authSlice';
 import authService from '../services/authService';
+import { IS_LIVE } from '../services/cloudApi';
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -30,7 +31,8 @@ export const Login = () => {
   const { loading, error } = useSelector((state) => state.auth);
 
   const [email, setEmail] = useState('employee@cloudflow.demo');
-  const [password, setPassword] = useState('demo1234');
+  // Live mode signs in to Cognito, so the demo password is the one set by create_users.sh
+  const [password, setPassword] = useState(IS_LIVE ? '' : 'demo1234');
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMsg, setForgotMsg] = useState('');
@@ -73,7 +75,7 @@ export const Login = () => {
 
   const handleQuickFill = (demoEmail) => {
     setEmail(demoEmail);
-    setPassword('demo1234');
+    setPassword(IS_LIVE ? '' : 'demo1234');
     dispatch(clearAuthError());
   };
 
@@ -201,10 +203,12 @@ export const Login = () => {
           <div className="mt-6 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
             <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1">
               <Server className="h-3.5 w-3.5 text-indigo-600" />
-              <span>Cognito Auth Integration Roadmap</span>
+              <span>{IS_LIVE ? 'Live AWS Cognito Sign-In' : 'Cognito Auth Integration Roadmap'}</span>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-500">
-              `authService.js` is structured for seamless migration to AWS Cognito User Pool with SRP protocol and JWT token claims validation.
+              {IS_LIVE
+                ? 'Signs in to the Cognito user pools of the primary and DR stacks. API Gateway verifies the JWT and the Cognito groups decide which approval queues you can act on.'
+                : '`authService.js` is structured for seamless migration to AWS Cognito User Pool with SRP protocol and JWT token claims validation.'}
             </p>
           </div>
         </div>

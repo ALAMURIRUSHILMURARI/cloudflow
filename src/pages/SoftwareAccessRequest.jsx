@@ -120,6 +120,7 @@ export const SoftwareAccessRequest = () => {
       navigate(`/requests/${newRequest.id}`);
     } catch (err) {
       console.error('Failed to submit software access request:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }

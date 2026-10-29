@@ -8,8 +8,41 @@
 ## Academic Notice & Project Status
 
 > [!IMPORTANT]  
-> **Current implementation uses mock services for frontend validation.**  
-> AWS Cognito, API Gateway, Lambda, DynamoDB, and S3 integration will be implemented in the subsequent backend integration phase.
+> **The app runs in two modes.** With `VITE_MOCK_MODE=true` it uses the client-side mock services (localStorage).
+> With `VITE_MOCK_MODE=false` and the API URLs set, it talks to the real AWS serverless backend in [`backend/`](backend/README.md):
+> Cognito sign-in, API Gateway + Lambda, DynamoDB (+ Streams audit ledger), S3 presigned uploads, EventBridge,
+> a DR stack with client-side failover, and a Raspberry Pi edge prober. See **Live AWS backend** below.
+
+## Live AWS backend
+
+| Piece | Where |
+| --- | --- |
+| Workflow engine, Lambda handlers, SAM template | `backend/cloud/` |
+| Raspberry Pi 3 B+ edge prober (load, p95, failover) | `backend/edge/` |
+| Tests (unit + moto AWS) | `backend/tests/` (CI: `.github/workflows/backend-tests.yml`) |
+| Live API client and failover | `src/services/cloudApi.js`, `src/services/liveService.js` |
+| Demo runbook, cost analysis, results | `docs/` |
+
+**Deploy** (from Git Bash, with the AWS CLI and SAM CLI signed in):
+
+```bash
+cd backend/cloud/aws
+read -s -p "Demo password: " DEMO_PASSWORD; export DEMO_PASSWORD; echo
+bash deploy_all.sh
+```
+
+It deploys the DR stack and then the primary stack, which replicates to the DR table. It also creates the demo users
+(`employee@cloudflow.demo`, `manager@cloudflow.demo`, `admin@cloudflow.demo`, and so on) on both stacks, and prints three lines for `.env`:
+
+```
+VITE_MOCK_MODE=false
+VITE_API_BASE_URL=https://....execute-api.ap-southeast-2.amazonaws.com
+VITE_API_SECONDARY_URL=https://....execute-api.ap-southeast-2.amazonaws.com
+```
+
+Commit them and push to `main`. GitHub Pages rebuilds the site, which then signs in to both Cognito user pools.
+The banner chip shows which stack is serving (green **LIVE: AWS primary**, amber **FAILOVER: served by AWS DR**).
+**Edge Telemetry** in the sidebar shows the Pi's p95 latency, request rate, failover events and approval turnaround.
 
 ---
 

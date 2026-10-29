@@ -11,12 +11,15 @@
  */
 
 import { requestService } from './requestService';
+import { IS_LIVE } from './cloudApi';
+import * as live from './liveService';
 
 class ApprovalService {
   /**
    * Fetch all requests that require approval.
    */
   async getPendingApprovals() {
+    if (IS_LIVE) return live.getPendingApprovals();
     await new Promise((resolve) => setTimeout(resolve, 200));
     const requests = await requestService.getRequests();
     return requests.filter((r) => r.status === 'Pending');
@@ -27,6 +30,7 @@ class ApprovalService {
    * Target AWS: POST /approvals/approve -> Step Functions SendTaskSuccess
    */
   async approveRequest(requestId, { approverName = 'Approver', comments = 'Approved' } = {}) {
+    if (IS_LIVE) return live.approveRequest(requestId, { comments });
     await new Promise((resolve) => setTimeout(resolve, 300));
     const request = await requestService.getRequestById(requestId);
 
@@ -74,6 +78,7 @@ class ApprovalService {
    * Target AWS: POST /approvals/reject -> Step Functions SendTaskFailure
    */
   async rejectRequest(requestId, { approverName = 'Approver', reason = 'Rejected' } = {}) {
+    if (IS_LIVE) return live.rejectRequest(requestId, { reason });
     await new Promise((resolve) => setTimeout(resolve, 300));
     const request = await requestService.getRequestById(requestId);
 

@@ -12,8 +12,10 @@ import {
   LogOut, 
   Layers,
   Cloud,
-  ChevronRight
+  ChevronRight,
+  Activity
 } from 'lucide-react';
+import { IS_LIVE } from '../../services/cloudApi';
 import { logout } from '../../store/slices/authSlice';
 import authService from '../../services/authService';
 
@@ -48,6 +50,7 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
       badge: unreadCount || 0,
       badgeColor: 'bg-rose-100 text-rose-700'
     },
+    { label: 'Edge Telemetry', path: '/telemetry', icon: Activity },
     { label: 'Profile', path: '/profile', icon: User },
     { label: 'Settings', path: '/settings', icon: Settings },
   ];
@@ -125,7 +128,7 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
                 <span className="text-xs font-bold text-slate-800">Architecture Mode</span>
               </div>
               <p className="text-[11px] leading-relaxed text-slate-600 mb-2">
-                <strong className="text-indigo-900 font-semibold">Demo / Integration Pending</strong>
+                <strong className="text-indigo-900 font-semibold">{IS_LIVE ? 'Live: AWS primary + DR' : 'Demo / Integration Pending'}</strong>
               </p>
               <div className="text-[10px] text-slate-500 font-mono bg-white/80 rounded border border-indigo-50 px-2 py-1">
                 AWS Cognito + API Gateway

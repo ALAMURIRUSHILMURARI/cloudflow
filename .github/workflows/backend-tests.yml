@@ -1,0 +1,36 @@
+name: Backend tests
+
+on:
+  push:
+    paths: [ 'backend/**', '.github/workflows/backend-tests.yml' ]
+  pull_request:
+    paths: [ 'backend/**', '.github/workflows/backend-tests.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: pip install pytest "moto[all]>=5" boto3 aiohttp cfn-lint
+
+      - name: Check the Lambda copy of the shared core is in sync
+        run: diff cloud/core/workflow_core.py cloud/aws/src/workflow_core.py
+
+      - name: Unit + AWS (moto) tests
+        run: python -m pytest -q tests
+
+      - name: Lint the CloudFormation templates
+        run: cfn-lint cloud/aws/template.yaml webapp/template.yaml

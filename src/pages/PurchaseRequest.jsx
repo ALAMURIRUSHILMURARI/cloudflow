@@ -148,6 +148,7 @@ export const PurchaseRequest = () => {
       navigate(`/requests/${newRequest.id}`);
     } catch (err) {
       console.error('Failed to submit purchase request:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }

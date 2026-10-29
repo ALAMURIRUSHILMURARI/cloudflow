@@ -12,6 +12,8 @@
  */
 
 import { INITIAL_REQUESTS, WORKFLOW_DEFINITIONS } from '../data/mockData';
+import { IS_LIVE } from './cloudApi';
+import * as live from './liveService';
 
 const STORAGE_KEY = 'cloudflow_requests_store';
 
@@ -44,6 +46,7 @@ class RequestService {
    * Target AWS: GET /requests (via API Gateway -> Lambda -> DynamoDB Scan/Query)
    */
   async getRequests() {
+    if (IS_LIVE) return live.getRequests();
     await new Promise((resolve) => setTimeout(resolve, 200));
     return this.getRawRequests();
   }
@@ -53,6 +56,7 @@ class RequestService {
    * Target AWS: GET /requests/{id} (DynamoDB GetItem)
    */
   async getRequestById(id) {
+    if (IS_LIVE) return live.getRequestById(id);
     await new Promise((resolve) => setTimeout(resolve, 150));
     const requests = this.getRawRequests();
     const found = requests.find((r) => r.id === id);
@@ -76,6 +80,7 @@ class RequestService {
    * Target AWS: POST /requests (API Gateway -> Lambda -> Step Functions StartExecution)
    */
   async createRequest({ type, title, priority = 'Normal', requester, data }) {
+    if (IS_LIVE) return live.createRequest({ type, title, priority, requester, data });
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     const workflowDef = WORKFLOW_DEFINITIONS[type] || WORKFLOW_DEFINITIONS.purchase;

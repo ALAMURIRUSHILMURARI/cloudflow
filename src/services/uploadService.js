@@ -10,6 +10,9 @@
  *   4. S3 triggers ObjectCreated notification to AWS Lambda for virus scanning & metadata indexing
  */
 
+import { IS_LIVE } from './cloudApi';
+import { holdUpload } from './liveService';
+
 class UploadService {
   /**
    * Request a pre-signed S3 upload URL and simulate direct-to-S3 binary upload.
@@ -17,6 +20,9 @@ class UploadService {
    * @returns {Promise<{ fileName: string, fileSize: string, s3Url: string, key: string }>}
    */
   async uploadAttachment(file) {
+    // Live: the presigned URL needs a request id, so the file is sent to S3 right after the request is created.
+    if (IS_LIVE && file) return holdUpload(file);
+
     // Simulated pre-signed URL generation and S3 PUT latency (400ms)
     await new Promise((resolve) => setTimeout(resolve, 400));
 

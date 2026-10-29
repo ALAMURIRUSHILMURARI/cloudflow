@@ -9,12 +9,21 @@ import { setNotifications } from '../../store/slices/notificationSlice';
 import requestService from '../../services/requestService';
 import approvalService from '../../services/approvalService';
 import notificationService from '../../services/notificationService';
-import { Info, Server, Cpu, Database } from 'lucide-react';
+import { Info, Server, Cpu, Database, ShieldAlert } from 'lucide-react';
+import * as cloud from '../../services/cloudApi';
 
 export const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const dispatch = useDispatch();
+  const [cloudStatus, setCloudStatus] = useState(cloud.status());
+
+  // Live mode: watch the primary/DR health and show which stack is serving
+  useEffect(() => {
+    if (!cloud.IS_LIVE) return undefined;
+    cloud.startMonitor();
+    return cloud.onStatusChange(setCloudStatus);
+  }, []);
 
   // Initialize global data stores on layout mount
   useEffect(() => {
@@ -33,6 +42,9 @@ export const Layout = () => {
       }
     };
     loadAppData();
+    // Live mode: other users approve in their own browsers, so keep the queues fresh
+    const timer = cloud.IS_LIVE ? setInterval(loadAppData, 15000) : null;
+    return () => timer && clearInterval(timer);
   }, [dispatch]);
 
   // Scroll to top on route change
@@ -54,11 +66,26 @@ export const Layout = () => {
             <span className="font-semibold text-white">CAPSTONE ARCHITECTURE BENCHMARK:</span>
             <span className="text-indigo-200">Serverless Cloud Application Architecture • Multi-Cloud Active Resilience & Physical Edge Testbed</span>
           </div>
-          <div className="flex items-center gap-3 text-[11px] font-mono text-indigo-300">
-            <span className="flex items-center gap-1"><Server className="h-3 w-3" /> AWS Serverless</span>
-            <span className="flex items-center gap-1"><Cpu className="h-3 w-3" /> Step Functions</span>
-            <span className="flex items-center gap-1"><Database className="h-3 w-3" /> DynamoDB</span>
-          </div>
+          {cloud.IS_LIVE ? (
+            <div className="flex items-center gap-2 text-[11px] font-mono">
+              <span
+                title={cloudStatus.url}
+                className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 font-bold ${
+                  cloudStatus.failedOver ? 'bg-amber-400 text-amber-950' : 'bg-emerald-500/20 text-emerald-300'
+                }`}
+              >
+                {cloudStatus.failedOver ? <ShieldAlert className="h-3 w-3" /> : <span className="h-2 w-2 rounded-full bg-emerald-400" />}
+                {cloudStatus.failedOver ? `FAILOVER: served by ${cloudStatus.active}` : `LIVE: ${cloudStatus.active}`}
+              </span>
+              <span className="flex items-center gap-1 text-indigo-300"><Database className="h-3 w-3" /> DynamoDB + Cognito</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 text-[11px] font-mono text-indigo-300">
+              <span className="flex items-center gap-1"><Server className="h-3 w-3" /> AWS Serverless</span>
+              <span className="flex items-center gap-1"><Cpu className="h-3 w-3" /> Step Functions</span>
+              <span className="flex items-center gap-1"><Database className="h-3 w-3" /> DynamoDB</span>
+            </div>
+          )}
         </div>
 
         {/* Main Content Area */}

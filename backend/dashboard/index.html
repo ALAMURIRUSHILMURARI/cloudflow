@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow Console</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e3e6ea; --accent:#2c6fbb; --ok:#1e8e3e; --bad:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  header h1 { font-size:17px; margin:0 12px 0 0; }
+  header input, header select { width:auto; }
+  main { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:16px; padding:16px 20px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-top:8px; }
+  input, select, textarea { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  button { padding:7px 12px; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; margin-top:10px; }
+  button.secondary { background:#eef2f7; color:var(--ink); }
+  button.bad { background:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; background:#eef2f7; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  #status { font-size:12px; color:var(--muted); }
+  canvas { width:100%; height:140px; border:1px solid var(--line); border-radius:6px; }
+  pre { white-space:pre-wrap; font-size:12px; background:#f3f4f6; padding:8px; border-radius:6px; max-height:260px; overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Serverless Workflow Console</h1>
+  <input id="api" placeholder="API URL (AWS or GCP)" size="44">
+  <input id="token" type="password" placeholder="API token" size="18">
+  <input id="user" placeholder="your name" size="10">
+  <select id="role"><option>Employee</option><option>Manager</option><option>Procurement</option><option>Finance</option><option>HR</option><option>IT</option><option>Admin</option></select>
+  <button class="secondary" onclick="save(); health()">Connect</button>
+  <span id="status"></span>
+</header>
+<main>
+  <section>
+    <h2>New request</h2>
+    <label>Type</label>
+    <select id="type"><option value="PURCHASE">Purchase request</option><option value="LEAVE">Leave application</option><option value="EXPENSE">Expense claim</option><option value="IT_ACCESS">IT software access</option></select>
+    <label>Title</label><input id="title" placeholder="e.g. Laptop for new hire">
+    <label>Amount (purchase / expense)</label><input id="amount" type="number" step="0.01">
+    <label>Details</label><textarea id="details" rows="2"></textarea>
+    <button onclick="submitRequest()">Submit</button>
+    <pre id="submitOut" hidden></pre>
+  </section>
+
+  <section>
+    <h2>Approval queue <span class="pill" id="queueRole"></span></h2>
+    <table><thead><tr><th>Request</th><th>Type</th><th>Amount</th><th></th></tr></thead><tbody id="queue"></tbody></table>
+    <button class="secondary" onclick="loadQueue()">Refresh</button>
+  </section>
+
+  <section>
+    <h2>Track a request</h2>
+    <label>Request ID</label><input id="rid">
+    <button class="secondary" onclick="track()">Show status and audit trail</button>
+    <label>Receipt upload (expense claims, AWS only)</label><input id="file" type="file">
+    <button class="secondary" onclick="upload()">Upload to S3</button>
+    <pre id="trackOut" hidden></pre>
+  </section>
+
+  <section style="grid-column:1/-1">
+    <h2>Edge telemetry from the Raspberry Pi</h2>
+    <canvas id="chart" width="1200" height="140"></canvas>
+    <table><thead><tr><th>Time</th><th>Cloud</th><th>Calls</th><th>Errors</th><th>p50</th><th>p95</th><th>p99</th><th>SLO</th><th>Events</th><th>Pi temp</th></tr></thead><tbody id="tel"></tbody></table>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const store = { get(k){ try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set(k,v){ try { localStorage.setItem(k,v); } catch {} } };
+["api","token","user","role"].forEach(k => { const v = store.get("wf_"+k); if (v) $(k).value = v; });
+if (!$("user").value) $("user").value = "demo-user";
+function save(){ ["api","token","user","role"].forEach(k => store.set("wf_"+k, $(k).value.trim())); loadQueue(); }
+$("role").onchange = save;
+
+async function api(method, path, body){
+  const base = $("api").value.trim().replace(/\/$/, "");
+  const r = await fetch(base + path, { method, headers: { "Content-Type":"application/json", "Authorization":"Bearer " + $("token").value.trim(),
+    "X-User": $("user").value.trim(), "X-Role": $("role").value }, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.message || ("HTTP " + r.status));
+  return data;
+}
+const fmt = ms => ms == null ? "" : ms < 1000 ? ms + " ms" : (ms/1000).toFixed(1) + " s";
+const show = (id, obj) => { $(id).hidden = false; $(id).textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); };
+
+async function health(){
+  try { const h = await api("GET", "/health"); $("status").innerHTML = `<span class="ok">connected to ${h.cloud} (${h.region})</span>`; }
+  catch(e){ $("status").innerHTML = `<span class="bad">${e.message}</span>`; }
+}
+async function submitRequest(){
+  try {
+    const r = await api("POST", "/requests", { type:$("type").value, title:$("title").value, amount:$("amount").value || undefined, details:$("details").value });
+    $("rid").value = r.id; show("submitOut", `Submitted ${r.id}. Waiting on ${r.pendingRole}.`); loadQueue();
+  } catch(e){ show("submitOut", "Error: " + e.message); }
+}
+async function loadQueue(){
+  $("queueRole").textContent = $("role").value;
+  try {
+    const q = await api("GET", "/requests");
+    $("queue").innerHTML = q.items.map(i => `<tr><td><b>${esc(i.title)}</b><br><small>${i.id} by ${esc(i.requester)}</small></td><td>${i.type}</td><td>${i.amount ?? ""}</td>
+      <td><button onclick="act('${i.id}',${i.version},'APPROVE')">Approve</button> <button class="bad" onclick="act('${i.id}',${i.version},'REJECT')">Reject</button></td></tr>`).join("")
+      || `<tr><td colspan="4" style="color:var(--muted)">Nothing waiting on ${$("role").value}.</td></tr>`;
+  } catch(e){ $("queue").innerHTML = `<tr><td colspan="4" class="bad">${e.message}</td></tr>`; }
+}
+async function act(id, version, action){
+  try { await api("POST", `/requests/${id}/actions`, { action, version, comment: "via console" }); } catch(e){ alertLine(e.message); }
+  loadQueue();
+}
+function alertLine(m){ $("status").innerHTML = `<span class="bad">${esc(m)}</span>`; }
+async function track(){
+  try {
+    const id = $("rid").value.trim(); const r = await api("GET", `/requests/${id}`); const a = await api("GET", `/requests/${id}/audit`);
+    const lines = [`${r.type} "${r.title}" is ${r.status}${r.pendingRole ? " (waiting on " + r.pendingRole + ")" : ""}${r.turnaroundMs ? ", turnaround " + fmt(r.turnaroundMs) : ""}`, "", "History:"]
+      .concat(r.history.map(h => `  ${new Date(h.at).toLocaleString()}  ${h.role.padEnd(11)} ${h.action}  ${h.by}`), "", "Audit ledger:")
+      .concat(a.entries.map(e => `  ${new Date(e.at).toLocaleString()}  ${e.event}  v${e.version}${e.sha256 ? "  sha256 " + e.sha256.slice(0,16) + "…" : ""}`));
+    show("trackOut", lines.join("\n"));
+  } catch(e){ show("trackOut", "Error: " + e.message); }
+}
+async function upload(){
+  const f = $("file").files[0]; if (!f) return show("trackOut", "Pick a file first.");
+  try {
+    const u = await api("POST", `/requests/${$("rid").value.trim()}/upload-url`, { filename: f.name, contentType: f.type || "application/octet-stream" });
+    const r = await fetch(u.uploadUrl, { method:"PUT", headers:{ "Content-Type": u.contentType }, body:f });
+    show("trackOut", r.ok ? `Uploaded straight to encrypted S3 as ${u.key}` : `S3 said HTTP ${r.status}`);
+  } catch(e){ show("trackOut", "Error: " + e.message); }
+}
+async function telemetry(){
+  try {
+    const t = (await api("GET", "/telemetry")).items;
+    $("tel").innerHTML = t.slice(0, 15).map(s => `<tr><td>${new Date(s.ts).toLocaleTimeString()}</td><td>${s.activeCloud}</td><td>${s.count}</td><td>${s.errors}</td>
+      <td>${fmt(s.p50)}</td><td>${fmt(s.p95)}</td><td>${fmt(s.p99)}</td><td class="${s.sloMet ? "ok" : "bad"}">${s.sloMet ? "met" : "missed"}</td>
+      <td>${(s.events||[]).join(", ")}${s.failoverMs ? " (" + fmt(s.failoverMs) + ")" : ""}</td><td>${s.pi && s.pi.cpuTempC ? s.pi.cpuTempC + " °C" : ""}</td></tr>`).join("");
+    draw(t.slice().reverse());
+  } catch(e){ /* telemetry is optional */ }
+}
+function draw(points){
+  const c = $("chart"), g = c.getContext("2d"), W = c.width, H = c.height; g.clearRect(0,0,W,H);
+  const ys = points.map(p => p.p95 || 0); if (ys.length < 2) return;
+  const max = Math.max(2200, ...ys) * 1.1, x = i => 40 + i * (W - 60) / (ys.length - 1), y = v => H - 20 - v / max * (H - 30);
+  g.strokeStyle = "#c0392b"; g.setLineDash([6,4]); g.beginPath(); g.moveTo(40, y(2000)); g.lineTo(W - 20, y(2000)); g.stroke(); g.setLineDash([]);
+  g.fillStyle = "#c0392b"; g.font = "12px sans-serif"; g.fillText("p95 SLO 2000 ms", W - 130, y(2000) - 4);
+  g.strokeStyle = "#2c6fbb"; g.lineWidth = 2; g.beginPath(); ys.forEach((v,i) => i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))); g.stroke();
+  points.forEach((p,i) => { if ((p.events||[]).some(e => e.startsWith("FAIL"))) { g.fillStyle = "#e67e22"; g.fillRect(x(i) - 1, 10, 2, H - 30); } });
+  g.fillStyle = "#667085"; g.fillText(Math.round(max) + " ms", 2, 12); g.fillText("0", 2, H - 20);
+}
+function esc(s){ return String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+if ($("api").value) { health(); loadQueue(); telemetry(); }
+setInterval(telemetry, 15000);
+</script>
+</body>
+</html>

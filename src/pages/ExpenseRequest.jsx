@@ -139,6 +139,7 @@ export const ExpenseRequest = () => {
       navigate(`/requests/${newRequest.id}`);
     } catch (err) {
       console.error('Failed to submit expense claim:', err);
+      window.alert(err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
